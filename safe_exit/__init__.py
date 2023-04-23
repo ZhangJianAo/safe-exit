@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 import ctypes
-from enum import Flag, auto
+from enum import IntEnum, Flag, auto
 
 _logger = logging.getLogger("safe_exit")
 _registered = False
@@ -27,6 +27,14 @@ class ConfigFlag(Flag):
 
 CONFIG_CTRL_ALL = ConfigFlag.CTRL_CLOSE | ConfigFlag.CTRL_SHUTDOWN | ConfigFlag.CTRL_LOGOFF
 DEFAULT_CONFIG = ConfigFlag.SIGQUIT | ConfigFlag.SIGHUP | ConfigFlag.SIGBREAK | CONFIG_CTRL_ALL
+
+
+class WinCtrlEvent(IntEnum):
+    CTRL_C_EVENT = 0
+    CTRL_BREAK_EVENT = 1
+    CTRL_CLOSE_EVENT = 2
+    CTRL_LOGOFF_EVENT = 5
+    CTRL_SHUTDOWN_EVENT = 6
 
 
 def _call_exit_funcs():
@@ -83,7 +91,24 @@ def _register_signals(flag: ConfigFlag):
     _registered = True
 
 
-def _win_nice_kill(pid):
+def _win_console_event_kill(pid, kill_signal: int) -> (bool, str):
+    kernel32 = ctypes.windll.kernel32
+
+    if kernel32.AttachConsole(pid):
+        # Send the CTRL_C_EVENT signal
+        success = kernel32.GenerateConsoleCtrlEvent(kill_signal, pid)
+        # Detach from the target process console
+        kernel32.FreeConsole()
+        if success:
+            return True
+        else:
+            error_code = kernel32.GetLastError()
+            return False, f"Failed to send CTRL EVENT {kill_signal} to process {pid} Error:{error_code}"
+    else:
+        return False, f"Can't attach console for process {pid}"
+
+
+def _win_send_wm_close(pid) -> (bool, str):
     from ctypes import wintypes
 
     EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -106,23 +131,35 @@ def _win_nice_kill(pid):
         WM_CLOSE = 0x0010
         ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
 
-    try:
-        kernel32 = ctypes.windll.kernel32
+    kernel32 = ctypes.windll.kernel32
 
-        hwnd = find_main_window(pid)
-        if hwnd:
-            send_wm_close(hwnd)
-        # Attach to the target process console
-        elif kernel32.AttachConsole(pid):
-            # Send the CTRL_C_EVENT signal
-            success = kernel32.GenerateConsoleCtrlEvent(0, pid)
-            # Detach from the target process console
-            kernel32.FreeConsole()
-            if not success:
-                error_code = kernel32.GetLastError()
-                raise Exception(f"Failed to send CTRL_CLOSE_EVENT Error:{error_code}")
-        else:
-            raise Exception(f"no windows found and can't attach console for process: {pid}")
+    hwnd = find_main_window(pid)
+    if hwnd:
+        send_wm_close(hwnd)
+        return True
+    else:
+        return False, f"Can't found windows for process {pid}"
+
+
+def _win_nice_kill(pid, kill_signal: int = None):
+    try:
+        error_msg = []
+
+        if kill_signal is None or kill_signal > WinCtrlEvent.CTRL_BREAK_EVENT:
+            success, msg = _win_send_wm_close(pid)
+            if success:
+                return
+            else:
+                error_msg.append(msg)
+
+        if kill_signal is None or kill_signal in (WinCtrlEvent.CTRL_C_EVENT, WinCtrlEvent.CTRL_BREAK_EVENT):
+            success, msg = _win_console_event_kill(pid, WinCtrlEvent.CTRL_C_EVENT if kill_signal is None else kill_signal)
+            if success:
+                return
+            else:
+                error_msg.append(msg)
+
+        raise Exception(' and '.join(error_msg))
 
     except Exception as e:
         _logger.exception(f"Windows nick kill process {pid} error: {e}")
@@ -179,7 +216,7 @@ def unregister(func):
             idx += 1
 
 
-def safe_kill(pid, kill_signal=signal.SIGTERM, timeout_secs=4):
+def safe_kill(pid, kill_signal=None, timeout_secs=4):
     """Graceful kill a process
 
     This function first try to send SIGTERM signal to the process,
@@ -193,9 +230,9 @@ def safe_kill(pid, kill_signal=signal.SIGTERM, timeout_secs=4):
     proc = psutil.Process(pid)
 
     if os.name == 'posix':
-        os.kill(pid, kill_signal)
+        os.kill(pid, kill_signal if kill_signal is not None else signal.SIGTERM)
     if os.name == 'nt':
-        _win_nice_kill(pid)
+        _win_nice_kill(pid, kill_signal)
 
     try:
         proc.wait(timeout_secs)
