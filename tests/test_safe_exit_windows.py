@@ -19,14 +19,14 @@ def test_signal(signal_to_send):
     process = subprocess.Popen(
         [sys.executable, __file__],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        startupinfo=subprocess.CREATE_NEW_CONSOLE
+        creationflags=subprocess.CREATE_NEW_CONSOLE
     )
     time.sleep(1)
 
     # safe_kill process with signal
     subprocess.run(
         [sys.executable, __file__, 'kill', str(process.pid), str(signal_to_send)],
-        startupinfo=subprocess.DETACHED_PROCESS)
+        creationflags=subprocess.DETACHED_PROCESS)
 
     # check process output match "safe_exit on signal %d"
     output, _ = process.communicate()
