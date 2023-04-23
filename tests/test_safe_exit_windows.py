@@ -24,12 +24,15 @@ def test_signal(signal_to_send):
     time.sleep(1)
 
     # safe_kill process with signal
-    subprocess.run(
+    run_result = subprocess.run(
         [sys.executable, __file__, 'kill', str(process.pid), str(signal_to_send)],
+        capture_output=True,
         creationflags=subprocess.DETACHED_PROCESS)
+    if run_result.returncode != 0:
+        raise Exception(f"kill process error: {run_result.stdout} \n\n {run_result.stderr}")
 
     # check process output match "safe_exit on signal %d"
-    output, _ = process.communicate()
+    output, _ = process.communicate(timeout=2)
     assert f"process {process.pid} safe_exit" in output.decode('utf-8')
 
 
@@ -51,7 +54,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == 'no_extra_signal':
         safe_exit.config(safe_exit.ConfigFlag(0))
     elif len(sys.argv) == 4 and sys.argv[1] == 'kill':
-        safe_exit.safe_kill(int(sys.argv[2]), int(sys.argv[3]))
+        safe_exit.safe_kill(int(sys.argv[2]), int(sys.argv[3]), silence=False)
 
     def clean_func():
         print(f"process {os.getpid()} safe_exit")

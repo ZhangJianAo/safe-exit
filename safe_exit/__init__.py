@@ -37,6 +37,10 @@ class WinCtrlEvent(IntEnum):
     CTRL_SHUTDOWN_EVENT = 6
 
 
+class SafeExitException(Exception):
+    pass
+
+
 def _call_exit_funcs():
     for (func, args, kwargs) in _exit_funcs:
         try:
@@ -91,7 +95,7 @@ def _register_signals(flag: ConfigFlag):
     _registered = True
 
 
-def _win_console_event_kill(pid, kill_signal: int) -> (bool, str):
+def _win_console_event_kill(pid, kill_signal: int):
     kernel32 = ctypes.windll.kernel32
 
     if kernel32.AttachConsole(pid):
@@ -99,16 +103,14 @@ def _win_console_event_kill(pid, kill_signal: int) -> (bool, str):
         success = kernel32.GenerateConsoleCtrlEvent(kill_signal, pid)
         # Detach from the target process console
         kernel32.FreeConsole()
-        if success:
-            return True
-        else:
+        if not success:
             error_code = kernel32.GetLastError()
-            return False, f"Failed to send CTRL EVENT {kill_signal} to process {pid} Error:{error_code}"
+            raise SafeExitException(f"Failed to send CTRL EVENT {kill_signal} to process {pid} Error:{error_code}")
     else:
-        return False, f"Can't attach console for process {pid}"
+        raise SafeExitException(f"Can't attach console for process {pid}")
 
 
-def _win_send_wm_close(pid) -> (bool, str):
+def _win_send_wm_close(pid):
     from ctypes import wintypes
 
     EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -136,33 +138,28 @@ def _win_send_wm_close(pid) -> (bool, str):
     hwnd = find_main_window(pid)
     if hwnd:
         send_wm_close(hwnd)
-        return True
     else:
-        return False, f"Can't found windows for process {pid}"
+        raise SafeExitException(f"Can't found windows for process {pid}")
 
 
 def _win_nice_kill(pid, kill_signal: int = None):
-    try:
-        error_msg = []
+    error_msg = []
 
-        if kill_signal is None or kill_signal > WinCtrlEvent.CTRL_BREAK_EVENT:
-            success, msg = _win_send_wm_close(pid)
-            if success:
-                return
-            else:
-                error_msg.append(msg)
+    if kill_signal is None or kill_signal > WinCtrlEvent.CTRL_BREAK_EVENT:
+        try:
+            _win_send_wm_close(pid)
+            return
+        except Exception as e:
+            error_msg.append(str(e))
 
-        if kill_signal is None or kill_signal in (WinCtrlEvent.CTRL_C_EVENT, WinCtrlEvent.CTRL_BREAK_EVENT):
-            success, msg = _win_console_event_kill(pid, WinCtrlEvent.CTRL_C_EVENT if kill_signal is None else kill_signal)
-            if success:
-                return
-            else:
-                error_msg.append(msg)
+    if kill_signal is None or kill_signal in (WinCtrlEvent.CTRL_C_EVENT, WinCtrlEvent.CTRL_BREAK_EVENT):
+        try:
+            _win_console_event_kill(pid, WinCtrlEvent.CTRL_C_EVENT if kill_signal is None else kill_signal)
+            return
+        except Exception as e:
+            error_msg.append(str(e))
 
-        raise Exception(' and '.join(error_msg))
-
-    except Exception as e:
-        _logger.exception(f"Windows nick kill process {pid} error: {e}")
+    raise SafeExitException(' and '.join(error_msg))
 
 
 def config(flag: ConfigFlag):
@@ -216,28 +213,32 @@ def unregister(func):
             idx += 1
 
 
-def safe_kill(pid, kill_signal=None, timeout_secs=4):
+def safe_kill(pid, kill_signal=None, timeout_secs=4, force_kill=True, silence=True):
     """Graceful kill a process
 
     This function first try to send SIGTERM signal to the process,
      and wait for timeout_secs, if the process still alive, then force kill it.
     On windows, this function will try to find window for process, if found, it will send WM_CLOSE event,
      if no window found, it will try to find console for process,
-     if found console, it will try attach the console and send CTRL_C_EVENT to process.
+     if found console, it will try to attach the console and send CTRL_C_EVENT to process.
     """
     import psutil
 
     proc = psutil.Process(pid)
 
-    if os.name == 'posix':
-        os.kill(pid, kill_signal if kill_signal is not None else signal.SIGTERM)
-    if os.name == 'nt':
-        _win_nice_kill(pid, kill_signal)
-
     try:
+        if os.name == 'posix':
+            os.kill(pid, kill_signal if kill_signal is not None else signal.SIGTERM)
+        if os.name == 'nt':
+            _win_nice_kill(pid, kill_signal)
+
         proc.wait(timeout_secs)
-    except psutil.TimeoutExpired:
-        proc.kill()
+    except Exception as e:
+        if not silence:
+            raise e
+    finally:
+        if force_kill and proc.is_running():
+            proc.kill()
 
 #############################################################
 # Following code is only for test                           #
