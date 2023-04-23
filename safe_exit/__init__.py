@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 import ctypes
-from enum import Flag
+from enum import Flag, auto
 
 _logger = logging.getLogger("safe_exit")
 _registered = False
@@ -15,8 +15,18 @@ _exit_funcs = []
 
 class ConfigFlag(Flag):
     """Config Flags"""
-    AUTO_CREATE_CONSOLE = 1
-    FORCE_HIDE_CONSOLE = 2
+    SIGQUIT = auto()
+    SIGHUP = auto()
+    SIGBREAK = auto()
+    CTRL_CLOSE = auto()
+    CTRL_SHUTDOWN = auto()
+    CTRL_LOGOFF = auto()
+    AUTO_CREATE_CONSOLE = auto()
+    FORCE_HIDE_CONSOLE = auto()
+
+
+CONFIG_CTRL_ALL = ConfigFlag.CTRL_CLOSE | ConfigFlag.CTRL_SHUTDOWN | ConfigFlag.CTRL_LOGOFF
+DEFAULT_CONFIG = ConfigFlag.SIGQUIT | ConfigFlag.SIGHUP | ConfigFlag.SIGBREAK | CONFIG_CTRL_ALL
 
 
 def _call_exit_funcs():
@@ -58,15 +68,15 @@ def _signal_handler(sig, frame):
     sys.exit(0)
 
 
-def _register_signals():
+def _register_signals(flag: ConfigFlag):
     # Register the signal handler
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
     if os.name == 'posix':
-        signal.signal(signal.SIGQUIT, _signal_handler)
-        signal.signal(signal.SIGHUP, _signal_handler)
+        if ConfigFlag.SIGQUIT in flag: signal.signal(signal.SIGQUIT, _signal_handler)
+        if ConfigFlag.SIGHUP in flag: signal.signal(signal.SIGHUP, _signal_handler)
     if os.name == 'nt':
-        signal.signal(signal.SIGBREAK, _signal_handler)
+        if ConfigFlag.SIGBREAK in flag: signal.signal(signal.SIGBREAK, _signal_handler)
         _register_ctrl_handler()
 
     global _registered
@@ -146,7 +156,7 @@ def config(flag: ConfigFlag):
             hwnd = kernel32.GetConsoleWindow()
             user32.ShowWindow(hwnd, 0)
 
-    _register_signals()
+    _register_signals(flag)
 
 
 def register(func, *args, **kwargs):
@@ -155,7 +165,7 @@ def register(func, *args, **kwargs):
     This function can be used as function annot
     """
     if not _registered:
-        _register_signals()
+        config(DEFAULT_CONFIG)
     _exit_funcs.append((func, args, kwargs))
 
 
@@ -169,7 +179,7 @@ def unregister(func):
             idx += 1
 
 
-def graceful_kill(pid, timeout_secs=4):
+def safe_kill(pid, kill_signal=signal.SIGTERM, timeout_secs=4):
     """Graceful kill a process
 
     This function first try to send SIGTERM signal to the process,
@@ -183,7 +193,7 @@ def graceful_kill(pid, timeout_secs=4):
     proc = psutil.Process(pid)
 
     if os.name == 'posix':
-        os.kill(pid, signal.SIGTERM)
+        os.kill(pid, kill_signal)
     if os.name == 'nt':
         _win_nice_kill(pid)
 
@@ -225,7 +235,7 @@ if __name__ == "__main__":
     if ops == "start":
         _process_main()
     elif ops == "kill":
-        graceful_kill(int(sys.argv[2]))
+        safe_kill(int(sys.argv[2]))
     elif ops == 'popen':
         p = subprocess.Popen(sys.argv[2])
         p.wait()
