@@ -8,17 +8,19 @@ The package allows users to register functions that will be called when the prog
 Different between atexit
 ========================
 
-Python has standard module `atexit` do similar thing,
-but `atexit` can't handle when program is killed by a signal not handled by Python.
+Python has standard module ``atexit`` do similar thing,
+but ``atexit`` can't handle when program is killed by a signal not handled by Python.
 
-Python only handle SIGINT signal, don't handle `SIGTERM`, `SIGQUIT`, `SIGHUP` signals.
-On Windows, program will also killed by `SIGBREAK` and `CTRL_CLOSE_EVENT`.
+Python only handle SIGINT signal, don't handle ``SIGTERM``, ``SIGQUIT``, ``SIGHUP`` signals.
+On Windows, program will also killed by ``SIGBREAK`` and ``CTRL_CLOSE_EVENT``.
 
 safe-exit can handle all this signals:
- * On posix system: `SIGINT`, `SIGTERM`, `SIGQUIT`, `SIGHUP`
- * On windows: `SIGINT`, `SIGTERM`, `SIGBREAK`, `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`
-Windows also has `CTRL_C_EVENT` and `CTRL_BREAK_EVENT` which will translate to `SIGINT`, `SIGBREAK` signal by python.
-On windows, `SIGTERM` are implemented just for the current process, there is no way to send `SIGTERM` to other process.
+
+* On posix system: ``SIGINT``, ``SIGTERM``, ``SIGQUIT``, ``SIGHUP``
+* On windows: ``SIGINT``, ``SIGTERM``, ``SIGBREAK``, ``CTRL_CLOSE_EVENT``, ``CTRL_LOGOFF_EVENT``, ``CTRL_SHUTDOWN_EVENT``
+
+Windows also has ``CTRL_C_EVENT`` and ``CTRL_BREAK_EVENT`` which will translate to ``SIGINT``, ``SIGBREAK`` signal by python.
+On windows, ``SIGTERM`` are implemented just for the current process, there is no way to send ``SIGTERM`` to other process.
 
 Installation
 ============
@@ -43,7 +45,7 @@ Just register clean up function like atexit:
 
     safe_exit.register(cleanup_function)
 
-`register` function can also used as function annotation
+``register`` function can also used as function annotation
 
 .. code-block:: python
 
