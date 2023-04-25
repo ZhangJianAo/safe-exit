@@ -1,10 +1,9 @@
 import logging
 import os
 import signal
-import subprocess
 import sys
-import time
 import ctypes
+from typing import List
 from enum import IntEnum, Flag, auto
 
 _logger = logging.getLogger("safe_exit")
@@ -49,19 +48,15 @@ def _call_exit_funcs():
             _logger.exception(f"exit function {func} error: {e}")
 
 
-def _register_ctrl_handler():
+def _register_ctrl_handler(events: List[int]):
     from ctypes import wintypes
 
     global _ctrl_handler
 
     _HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
 
-    CTRL_CLOSE_EVENT = 2
-    CTRL_LOGOFF_EVENT = 5
-    CTRL_SHUTDOWN_EVENT = 6
-
     def ctrl_handler(ctrl_type):
-        if ctrl_type in (CTRL_CLOSE_EVENT, CTRL_SHUTDOWN_EVENT, CTRL_LOGOFF_EVENT):
+        if ctrl_type in events:
             _logger.info(f"Ctrl handler received {ctrl_type}. Performing graceful shutdown...")
             _call_exit_funcs()
             return True
@@ -89,7 +84,15 @@ def _register_signals(flag: ConfigFlag):
         if ConfigFlag.SIGHUP in flag: signal.signal(signal.SIGHUP, _signal_handler)
     if os.name == 'nt':
         if ConfigFlag.SIGBREAK in flag: signal.signal(signal.SIGBREAK, _signal_handler)
-        _register_ctrl_handler()
+        events = []
+        if ConfigFlag.CTRL_CLOSE in flag:
+            events.append(WinCtrlEvent.CTRL_CLOSE_EVENT.value)
+        if ConfigFlag.CTRL_LOGOFF in flag:
+            events.append(WinCtrlEvent.CTRL_LOGOFF_EVENT.value)
+        if ConfigFlag.CTRL_SHUTDOWN in flag:
+            events.append(WinCtrlEvent.CTRL_SHUTDOWN_EVENT.value)
+        if len(events) > 0:
+            _register_ctrl_handler(events)
 
     global _registered
     _registered = True
@@ -100,14 +103,15 @@ def _win_console_event_kill(pid, kill_signal: int):
 
     if kernel32.AttachConsole(pid):
         # Send the CTRL_C_EVENT signal
-        success = kernel32.GenerateConsoleCtrlEvent(kill_signal, pid)
+        success = kernel32.GenerateConsoleCtrlEvent(kill_signal, 0)
         # Detach from the target process console
         kernel32.FreeConsole()
         if not success:
-            error_code = kernel32.GetLastError()
-            raise SafeExitException(f"Failed to send CTRL EVENT {kill_signal} to process {pid} Error:{error_code}")
+            error = ctypes.WinError(kernel32.GetLastError())
+            raise SafeExitException(f"Failed to send CTRL EVENT {kill_signal} to process {pid}: {error}")
     else:
-        raise SafeExitException(f"Can't attach console for process {pid}")
+        error = ctypes.WinError(kernel32.GetLastError())
+        raise SafeExitException(f"Can't attach console for process {pid}: {error}")
 
 
 def _win_send_wm_close(pid):
@@ -239,41 +243,3 @@ def safe_kill(pid, kill_signal=None, timeout_secs=4, force_kill=True, silence=Tr
     finally:
         if force_kill and proc.is_running():
             proc.kill()
-
-#############################################################
-# Following code is only for test                           #
-#############################################################
-
-def _gracefully():
-    _logger.info("Atexitex, Performing graceful shutdown...")
-    time.sleep(2)
-    _logger.info("Atexitex, Shutdown complete")
-
-
-def _process_main():
-    _logger.info(f"Running... PID:{os.getpid()} Press Ctrl+C to exit.")
-    while True:
-        # Your main program loop
-        time.sleep(1)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        format='%(asctime)s %(levelname)s:%(message)s',
-        level=logging.INFO,
-        handlers=[
-            logging.FileHandler("signal_test.log"),
-            logging.StreamHandler()
-        ]
-    )
-
-    register(_gracefully)
-
-    ops = sys.argv[1]
-    if ops == "start":
-        _process_main()
-    elif ops == "kill":
-        safe_kill(int(sys.argv[2]))
-    elif ops == 'popen':
-        p = subprocess.Popen(sys.argv[2])
-        p.wait()

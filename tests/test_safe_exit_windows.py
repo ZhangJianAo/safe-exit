@@ -1,5 +1,6 @@
+import ctypes
+import logging
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -13,55 +14,113 @@ if os.name != "nt":
     pytest.skip(f"skipping posix tests on {sys.platform}", allow_module_level=True)
 
 
-@pytest.mark.parametrize("signal_to_send", [e.value for e in safe_exit.WinCtrlEvent])
-def test_signal(signal_to_send):
+def check_log_ready(pid):
+    log_file_name = f"{pid}.log"
+    while True:
+        time.sleep(1)
+        if not os.path.exists(log_file_name):
+            continue
+        with open(log_file_name, 'r') as f:
+            if f"{pid} ready" in f.read():
+                return True
+
+
+@pytest.mark.parametrize("signal_to_send",
+                         [safe_exit.WinCtrlEvent.CTRL_C_EVENT.value, safe_exit.WinCtrlEvent.CTRL_BREAK_EVENT.value])
+def test_console_signal(signal_to_send):
     # create process
-    process = subprocess.Popen(
-        [sys.executable, __file__],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        creationflags=subprocess.CREATE_NEW_CONSOLE
-    )
-    time.sleep(1)
+    process = subprocess.Popen([sys.executable, __file__], creationflags=subprocess.CREATE_NEW_CONSOLE)
+    check_log_ready(process.pid)
 
     # safe_kill process with signal
     run_result = subprocess.run(
         [sys.executable, __file__, 'kill', str(process.pid), str(signal_to_send)],
-        capture_output=True,
         creationflags=subprocess.DETACHED_PROCESS)
     if run_result.returncode != 0:
-        raise Exception(f"kill process error: {run_result.stdout} \n\n {run_result.stderr}")
+        logging.error(f"kill process error: {run_result.stdout} \n\n {run_result.stderr}")
 
-    # check process output match "safe_exit on signal %d"
-    output, _ = process.communicate(timeout=2)
-    assert f"process {process.pid} safe_exit" in output.decode('utf-8')
+    process.wait(timeout=20)
+
+    log_file_name = f"{process.pid}.log"
+    with open(log_file_name, "r") as f:
+        logs = f.read()
+        assert f"process {process.pid} safe_exit" in logs
+
+    os.unlink(log_file_name)
 
 
-# @pytest.mark.parametrize("signal_to_send", [signal.SIGQUIT, signal.SIGHUP])
-# def test_no_handle_signal(signal_to_send):
-#     # create process
-#     process = subprocess.Popen([sys.executable, __file__, 'no_extra_signal'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#     time.sleep(1)
-#
-#     # safe_kill process with signal
-#     safe_exit.safe_kill(process.pid, signal_to_send)
-#
-#     # check process output match "safe_exit on signal %d"
-#     output, _ = process.communicate()
-#     assert len(output) == 0
+def test_wm_close():
+    # create process
+    process = subprocess.Popen([sys.executable, __file__, 'auto_create'], creationflags=subprocess.DETACHED_PROCESS)
+    check_log_ready(process.pid)
+
+    # safe_kill process with signal
+    run_result = subprocess.run(
+        [sys.executable, __file__, 'kill', str(process.pid), str(safe_exit.WinCtrlEvent.CTRL_CLOSE_EVENT.value)],
+        creationflags=subprocess.DETACHED_PROCESS)
+    if run_result.returncode != 0:
+        logging.error(f"kill process error: {run_result.stdout} \n\n {run_result.stderr}")
+
+    process.wait(timeout=20)
+
+    log_file_name = f"{process.pid}.log"
+    with open(log_file_name, "r") as f:
+        logs = f.read()
+        assert f"process {process.pid} safe_exit" in logs
+
+    os.unlink(log_file_name)
+
+
+def test_no_handle_signal():
+    # create process
+    process = subprocess.Popen([sys.executable, __file__, 'no_signal'], creationflags=subprocess.DETACHED_PROCESS)
+    check_log_ready(process.pid)
+
+    # safe_kill process with signal
+    run_result = subprocess.run(
+        [sys.executable, __file__, 'kill', str(process.pid), str(safe_exit.WinCtrlEvent.CTRL_CLOSE_EVENT.value)],
+        creationflags=subprocess.DETACHED_PROCESS)
+    if run_result.returncode != 0:
+        logging.error("kill process error")
+
+    process.wait(timeout=20)
+
+    log_file_name = f"{process.pid}.log"
+    with open(log_file_name, "r") as f:
+        logs = f.read()
+        assert f"process {process.pid} safe_exit" not in logs
+
+    os.unlink(log_file_name)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == 'no_extra_signal':
-        safe_exit.config(safe_exit.ConfigFlag(0))
-    elif len(sys.argv) == 4 and sys.argv[1] == 'kill':
-        safe_exit.safe_kill(int(sys.argv[2]), int(sys.argv[3]), silence=False)
+    logging.basicConfig(filename=f"{os.getpid()}.log", level=logging.DEBUG)
+
+    if len(sys.argv) == 4 and sys.argv[1] == 'kill':
+        try:
+            kernel32 = ctypes.windll.kernel32
+            hwnd = kernel32.GetConsoleWindow()
+            print(f"killer's console window is {hwnd}")
+            safe_exit.safe_kill(int(sys.argv[2]), int(sys.argv[3]), silence=False)
+        except Exception as e:
+            logging.exception(f"kill process {sys.argv[2]} error: {e}")
+            exit(1)
+        exit(0)
+
 
     def clean_func():
-        print(f"process {os.getpid()} safe_exit")
+        logging.info(f"process {os.getpid()} safe_exit")
+
+    if len(sys.argv) == 2:
+        if sys.argv[1] == 'auto_create':
+            safe_exit.config(safe_exit.DEFAULT_CONFIG | safe_exit.ConfigFlag.AUTO_CREATE_CONSOLE)
+        elif sys.argv[1] == 'no_signal':
+            safe_exit.config(safe_exit.ConfigFlag.AUTO_CREATE_CONSOLE)
 
     safe_exit.register(clean_func)
 
     try:
+        logging.info(f"process {os.getpid()} ready")
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
