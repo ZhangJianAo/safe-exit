@@ -166,7 +166,7 @@ def _win_nice_kill(pid, kill_signal: int = None):
     raise SafeExitException(' and '.join(error_msg))
 
 
-def config(flag: ConfigFlag):
+def config(flag: ConfigFlag = DEFAULT_CONFIG):
     """Config to register signals
 
     There is no need to call this function on Linux or other POSIX systems,

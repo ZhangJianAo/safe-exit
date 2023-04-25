@@ -3,9 +3,22 @@ Safe Exit
 ================
 
 Safe Exit is a Python package that provides functionality to handle graceful process termination.
-The package allows users to register functions that will be called when the program exits,
-and it also includes a utility to nicely kill processes,
-giving them an opportunity to clean up before terminating.
+The package allows users to register functions that will be called when the program exits.
+
+Different between atexit
+========================
+
+Python has standard module `atexit` do similar thing,
+but `atexit` can't handle when program is killed by a signal not handled by Python.
+
+Python only handle SIGINT signal, don't handle `SIGTERM`, `SIGQUIT`, `SIGHUP` signals.
+On Windows, program will also killed by `SIGBREAK` and `CTRL_CLOSE_EVENT`.
+
+safe-exit can handle all this signals:
+ * On posix system: `SIGINT`, `SIGTERM`, `SIGQUIT`, `SIGHUP`
+ * On windows: `SIGINT`, `SIGTERM`, `SIGBREAK`, `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT`, `CTRL_SHUTDOWN_EVENT`
+Windows also has `CTRL_C_EVENT` and `CTRL_BREAK_EVENT` which will translate to `SIGINT`, `SIGBREAK` signal by python.
+On windows, `SIGTERM` are implemented just for the current process, there is no way to send `SIGTERM` to other process.
 
 Installation
 ============
@@ -19,15 +32,11 @@ To install Safe Exit, simply run:
 Usage
 =====
 
-To use the Safe Exit package in your Python code, first import the necessary functions:
+Just register clean up function like atexit:
 
 .. code-block:: python
 
-    import safe_exit import
-
-Register a function to be called when the program exits:
-
-.. code-block:: python
+    import safe_exit
 
     def cleanup_function():
         # Perform cleanup tasks
