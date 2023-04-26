@@ -1,6 +1,7 @@
 import ctypes
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -44,7 +45,7 @@ def test_console_signal(signal_to_send):
     log_file_name = f"{process.pid}.log"
     with open(log_file_name, "r") as f:
         logs = f.read()
-        assert f"process {process.pid} safe_exit" in logs
+        assert len(re.findall(f"process {process.pid} safe_exit", logs)) == 1
 
     os.unlink(log_file_name)
 
@@ -66,7 +67,7 @@ def test_wm_close():
     log_file_name = f"{process.pid}.log"
     with open(log_file_name, "r") as f:
         logs = f.read()
-        assert f"process {process.pid} safe_exit" in logs
+        assert len(re.findall(f"process {process.pid} safe_exit", logs)) == 1
 
     os.unlink(log_file_name)
 

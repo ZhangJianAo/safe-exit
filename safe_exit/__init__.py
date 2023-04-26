@@ -3,6 +3,7 @@ import os
 import signal
 import sys
 import ctypes
+import atexit
 from typing import List
 from enum import IntEnum, Flag, auto
 
@@ -40,12 +41,17 @@ class SafeExitException(Exception):
     pass
 
 
+@atexit.register
 def _call_exit_funcs():
+    global _exit_funcs
+
     for (func, args, kwargs) in _exit_funcs:
         try:
             func(*args, **kwargs)
         except Exception as e:
             _logger.exception(f"exit function {func} error: {e}")
+
+    _exit_funcs = []
 
 
 def _register_ctrl_handler(events: List[int]):
