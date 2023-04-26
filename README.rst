@@ -5,22 +5,26 @@ Safe Exit
 Safe Exit is a Python package that provides functionality to handle graceful process termination.
 The package allows users to register functions that will be called when the program exits.
 
-Different between atexit
+Difference from atexit
 ========================
 
-Python has standard module ``atexit`` do similar thing,
-but ``atexit`` can't handle when program is killed by a signal not handled by Python.
+Python has a standard module called ``atexit`` that does something similar,
+but ``atexit`` cannot handle cases where a program is killed by a signal not handled by Python.
 
-Python only handle SIGINT signal, don't handle ``SIGTERM``, ``SIGQUIT``, ``SIGHUP`` signals.
-On Windows, program will also killed by ``SIGBREAK`` and ``CTRL_CLOSE_EVENT``.
+Python only handles the SIGINT signal and does not handle SIGTERM, SIGQUIT, and SIGHUP signals.
+On Windows, programs can also be killed by SIGBREAK and CTRL_CLOSE_EVENT.
 
-safe-exit can handle all this signals:
+Safe Exit can handle all these signals:
 
-* On posix system: ``SIGINT``, ``SIGTERM``, ``SIGQUIT``, ``SIGHUP``
-* On windows: ``SIGINT``, ``SIGTERM``, ``SIGBREAK``, ``CTRL_CLOSE_EVENT``, ``CTRL_LOGOFF_EVENT``, ``CTRL_SHUTDOWN_EVENT``
+* On POSIX systems: ``SIGINT``, ``SIGTERM``, ``SIGQUIT``, and ``SIGHUP``
+* On Windows:
+ * ``SIGINT``, ``SIGTERM``, ``SIGBREAK``
+ * ``CTRL_CLOSE_EVENT``, ``CTRL_LOGOFF_EVENT``, ``CTRL_SHUTDOWN_EVENT``
 
-Windows also has ``CTRL_C_EVENT`` and ``CTRL_BREAK_EVENT`` which will translate to ``SIGINT``, ``SIGBREAK`` signal by python.
-On windows, ``SIGTERM`` are implemented just for the current process, there is no way to send ``SIGTERM`` to other process.
+Windows also has ``CTRL_C_EVENT`` and ``CTRL_BREAK_EVENT``
+which Python translate to ``SIGINT`` and ``SIGBREAK`` signals, respectively.
+On windows, ``SIGTERM`` is implemented only  for the current process,
+there is no way to send ``SIGTERM`` to other processes.
 
 Installation
 ============
@@ -34,7 +38,7 @@ To install Safe Exit, simply run:
 Usage
 =====
 
-Just register clean up function like atexit:
+Just register a cleanup function like you would with `atexit`:
 
 .. code-block:: python
 
@@ -45,7 +49,7 @@ Just register clean up function like atexit:
 
     safe_exit.register(cleanup_function)
 
-``register`` function can also used as function annotation
+The ``register`` function can also be used as a decorator:
 
 .. code-block:: python
 
@@ -53,19 +57,36 @@ Just register clean up function like atexit:
     def cleanup_function():
         # Perform cleanup tasks
 
-Nicely kill a process, giving it a chance to clean up:
+Signal handling is configurable.
+Call the ``config`` function before registering functions.
+The following code configures ``safe_exit`` to handle SIGQUIT and SIGHUP signals:
+
+.. code-block:: python
+
+    from safe_exit import ConfigFlag, config, register
+    config(ConfigFlag.SIGQUIT | ConfigFlag.SIGHUP)
+
+    @register
+    def cleanup()
+        print("clean up")
+
+
+To nicely kill a process, giving it a chance to clean up:
 
 .. code-block:: python
 
     process_id = ...
-    safe_exit.nice_kill(process_id)
+    safe_exit.safe_kill(process_pid)
 
 Contributing
 ============
 
-Contributions to Safe Exit are welcome! Please read the contributing guidelines before submitting a pull request or reporting an issue.
+Contributions to Safe Exit are welcome!
+If you would like to contribute or have any ideas for improvements,
+please feel free to open an issue on the project's issue tracker
+or get in touch with the maintainer directly.
 
 License
 =======
 
-Safe Exit is released under the MIT License. See the LICENSE file for more details.
+Safe Exit is released under the MIT License. See the LICENSE.txt file for more details.
