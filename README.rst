@@ -18,8 +18,10 @@ Safe Exit can handle all these signals:
 
 * On POSIX systems: ``SIGINT``, ``SIGTERM``, ``SIGQUIT``, and ``SIGHUP``
 * On Windows:
- * ``SIGINT``, ``SIGTERM``, ``SIGBREAK``
- * ``CTRL_CLOSE_EVENT``, ``CTRL_LOGOFF_EVENT``, ``CTRL_SHUTDOWN_EVENT``
+
+  - ``SIGINT``, ``SIGTERM``, ``SIGBREAK``
+
+  - ``CTRL_CLOSE_EVENT``, ``CTRL_LOGOFF_EVENT``, ``CTRL_SHUTDOWN_EVENT``
 
 Windows also has ``CTRL_C_EVENT`` and ``CTRL_BREAK_EVENT``
 which Python translate to ``SIGINT`` and ``SIGBREAK`` signals, respectively.
