@@ -14,19 +14,30 @@ _exit_funcs = []
 
 
 class ConfigFlag(Flag):
-    """Config Flags"""
+    """Configuration Flags:"""
     SIGQUIT = auto()
+    """Handle SIGQUIT signal."""
     SIGHUP = auto()
+    """Handle SIGHUP signal."""
     SIGBREAK = auto()
+    """Handle SIGBREAK signal."""
     CTRL_CLOSE = auto()
+    """Handle CTRL_CLOSE_EVENT."""
     CTRL_SHUTDOWN = auto()
+    """Handle CTRL_SHUTDOWN_EVENT."""
     CTRL_LOGOFF = auto()
+    """Handle CTRL_LOGOFF_EVENT."""
     AUTO_CREATE_CONSOLE = auto()
+    """Alloc a console and set it hidden."""
     FORCE_HIDE_CONSOLE = auto()
+    """If program is in a console, set the console hidden."""
 
 
 CONFIG_CTRL_ALL = ConfigFlag.CTRL_CLOSE | ConfigFlag.CTRL_SHUTDOWN | ConfigFlag.CTRL_LOGOFF
+"""All Windows ctrl events."""
+
 DEFAULT_CONFIG = ConfigFlag.SIGQUIT | ConfigFlag.SIGHUP | ConfigFlag.SIGBREAK | CONFIG_CTRL_ALL
+"""Default config: will handle all signals."""
 
 
 class WinCtrlEvent(IntEnum):
@@ -173,14 +184,24 @@ def _win_nice_kill(pid, kill_signal: int = None):
 
 
 def config(flag: ConfigFlag = DEFAULT_CONFIG):
-    """Config to register signals
+    """Configures which signals to register.
 
-    There is no need to call this function on Linux or other POSIX systems,
-     this module will automatically register signal handlers.
-    On Windows, ```config(ConfigFlag.AUTO_CREATE_CONSOLE)``` will check if program attach to a console,
-     if not, it will alloc a console and set it to invisable.
-    If you want to hide the console window even the window is not alloc by program, add ConfigFlag.FORCE_HIDE_CONSOLE,
-     like ```config(ConfigFlag.AUTO_CREATE_CONSOLE | ConfigFlag.FORCE_HIDE_CONSOLE)```
+    This function must be called before the register() function.
+
+    If the config() function is not called,
+    the register() function will automatically call this function with DEFAULT_CONFIG,
+    which will handle all signals.
+
+    Using this function allows you to control which signals to handle. SIGINT and SIGTERM are always handled,
+    and other signals can be set by this function.
+
+    On Windows,
+    ``config(DEFAULT_CONFIG | ConfigFlag.AUTO_CREATE_CONSOLE)`` checks if the program is attached to a console.
+    If not, it allocates a console and sets it to invisible.
+
+    If you want to hide the console window even if it is not allocated by the program,
+    add ConfigFlag.FORCE_HIDE_CONSOLE,
+    like ``config(DEFAULT_CONFIG | ConfigFlag.AUTO_CREATE_CONSOLE | ConfigFlag.FORCE_HIDE_CONSOLE)``.
 
     :param flag: Configuration flags
     :type flag: ConfigFlag
@@ -204,17 +225,20 @@ def config(flag: ConfigFlag = DEFAULT_CONFIG):
 
 
 def register(func, *args, **kwargs):
-    """Register function will call when program will exit
+    """Register func as a function to be executed at termination.
 
-    This function can be used as function annot
+    Any optional arguments that are to be passed to func must be passed as arguments to register().
+
+    This function can be used as function decorator.
     """
     if not _registered:
         config(DEFAULT_CONFIG)
     _exit_funcs.append((func, args, kwargs))
+    return func
 
 
 def unregister(func):
-    """Unregister function"""
+    """Remove func from the list of functions to be run at interpreter shutdown."""
     idx = 0
     while idx < len(_exit_funcs):
         if _exit_funcs[idx][0] == func:
@@ -224,13 +248,29 @@ def unregister(func):
 
 
 def safe_kill(pid, kill_signal=None, timeout_secs=4, force_kill=True, silence=True):
-    """Graceful kill a process
+    """Gracefully kills a process.
 
-    This function first try to send SIGTERM signal to the process,
-     and wait for timeout_secs, if the process still alive, then force kill it.
-    On windows, this function will try to find window for process, if found, it will send WM_CLOSE event,
-     if no window found, it will try to find console for process,
-     if found console, it will try to attach the console and send CTRL_C_EVENT to process.
+    :param pid: Process id to be killed.
+    :type pid: int
+
+    :param kill_signal: Which signal to send; can be None to use default signal
+    :type kill_signal: int
+
+    :param timeout_secs: How many seconds to wait for the process to terminate.
+    :type timeout_secs: int
+
+    :param force_kill: If True, force kill the process after timeout.
+    :type force_kill: bool
+
+    :param silence: If True, raise no exception if sending the signal results in an error.
+    :type silence: bool
+
+    This function first try to send kill_signal to the process,
+    and wait for timeout_secs, if the process still alive, it then forces kill it.
+
+    On windows, this function tries to find a window for the process, if found, it sends the WM_CLOSE event.
+    If no window is found, it tries to find console for the process.
+    If a console is found, it tries to attach the console and sends the CTRL_C_EVENT to the process.
     """
     import psutil
 
